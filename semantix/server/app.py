@@ -38,7 +38,9 @@ def process_pdf(file_path,timeout=1000):
         "What is the employee number?",
         "What is the total earnings?",
         "What is the total deductions?",
-        "What is the net amount?"
+        "What is the net amount?",
+        "What is the gross earnings?",
+
     ]
     results = {query.split("What is the ")[1].replace("?", "").lower(): None for query in queries}
 
@@ -57,7 +59,7 @@ def process_pdf(file_path,timeout=1000):
                 elif "Total Earnings" in line:
                     results["total earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
                 elif "Gross Earnings" in line:
-                    results["gross earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
+                    results["Gross Earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
 
                 elif "Total Deductions" in line:
                     results["total deductions"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
