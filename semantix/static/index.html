@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salary Details Fetcher</title>
+</head>
+<body>
+    <input type="file" id="pdfUpload" accept=".pdf">
+    <button onclick="uploadFile()">Get Salary Details</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function uploadFile() {
+            const fileInput = document.getElementById('pdfUpload');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a PDF file.');
+                return;
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1010000); // 1010 seconds (1000 + buffer)
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://localhost:5000/getSalaryDetails', {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+                } else {
+                    document.getElementById('result').textContent = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                document.getElementById('result').textContent = `Error: ${error.name === 'AbortError' ? 'Request timed out after 1000 seconds' : error.message}`;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+    </script>
+</body>
+</html>
