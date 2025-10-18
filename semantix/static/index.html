@@ -26,6 +26,7 @@
             formData.append('file', file);
 
             try {
+                document.getElementById('result').textContent = "Processing....Please Wait. Maximum timeout is 15 mins";
                 const response = await fetch('http://localhost:5000/getSalaryDetails', {
                     method: 'POST',
                     body: formData,
