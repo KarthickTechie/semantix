@@ -4,8 +4,6 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import InMemoryVectorStore
-import os
-import asyncio
 from flask_cors import CORS  # Import CORS
 from waitress import serve
 
