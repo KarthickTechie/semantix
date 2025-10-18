@@ -55,7 +55,10 @@ def process_pdf(file_path,timeout=1000):
                 elif "Date of Joining" in line:
                     results["date of joining"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
                 elif "Total Earnings" in line:
+                    results["total earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
+                elif "Gross Earnings" in line:
                     results["gross earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
+
                 elif "Total Deductions" in line:
                     results["total deductions"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
                 elif "Net Amount" in line:
