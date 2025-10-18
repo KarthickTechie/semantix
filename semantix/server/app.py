@@ -32,43 +32,75 @@ def process_pdf(file_path,timeout=1000):
         embedding=embeddings
     )
 
-    # Perform similarity search for key details
+# Define queries based on observed content
     queries = [
-        "What is the employee name?",
-        "What is the employee number?",
-        "What is the total earnings?",
-        "What is the total deductions?",
-        "What is the net amount?",
-        "What is the gross earnings?",
-
+        "Employee Name",
+        "Employee ID",
+        "Date of Joining",
+        "Pay Period",
+        "Pay Date",
+        "Total Net Pay",
+        "Basic",
+        "House Rent Allowance",
+        "Income Tax",
+        "Provident Fund",
+        "Gross Earnings",
+        "Total Deductions",
+        "employee name",
+        "employee number",
+        "date of joining",
+        "total earnings",
+        "total deductions",
+        "net amount"
     ]
-    results = {query.split("What is the ")[1].replace("?", "").lower(): None for query in queries}
+    results = {query.lower().replace(" ", "_"): None for query in queries}
 
+    # Perform similarity search and parse results
     for query in queries:
         search_results = vector_store.similarity_search(query, k=1)
         if search_results and time.time() - start_time < timeout:
             content = search_results[0].page_content
-            parts = content.split("\n")
-            for i, line in enumerate(parts):
-                if "Employee Name" in line:
-                    results["employee name"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
-                elif "Employee Number" in line:
-                    results["employee number"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
-                elif "Date of Joining" in line:
-                    results["date of joining"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
-                elif "Total Earnings" in line:
-                    results["total earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
-                elif "Gross Earnings" in line:
-                    results["Gross Earnings"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
-
-                elif "Total Deductions" in line:
-                    results["total deductions"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
-                elif "Net Amount" in line:
-                    results["net amount"] = parts[i + 1].strip() if i + 1 < len(parts) else "Not found"
+            lines = content.split("\n")
+            for i, line in enumerate(lines):
+                line = line.strip()
+                if query in line:
+                    # Look for value in the same line or next line
+                    if ":" in line:
+                        value = line.split(":")[1].strip()
+                        results[query.lower().replace(" ", "_")] = value if value else "Not found"
+                    elif i + 1 < len(lines):
+                        next_line = lines[i + 1].strip()
+                        if "Rs." in next_line or "₹" in next_line:
+                            results[query.lower().replace(" ", "_")] = next_line
+                        else:
+                            results[query.lower().replace(" ", "_")] = next_line if next_line else "Not found"
         elif time.time() - start_time >= timeout:
             raise TimeoutError("Processing exceeded 1000-second timeout limit")
 
+    expected_fields = {
+        "employee_name": "Not found",
+        "employee_id": "Not found",
+        "date_of_joining": "Not found",
+        "pay_period": "Not found",
+        "pay_date": "Not found",
+        "total_net_pay": "Not found",
+        "basic": "Not found",
+        "house_rent_allowance": "Not found",
+        "income_tax": "Not found",
+        "provident_fund": "Not found",
+        "gross_earnings": "Not found",
+        "total_deductions": "Not found",
+        "employee_number":"Not found",
+        "total_earnings":"Not found",
+        "total_deductions":"Not found",
+        "net_amount":"Not found",
+
+    }
+    results.update({k: v for k, v in results.items() if v is not None})
+    results = {k: expected_fields[k] if v is None else v for k, v in results.items()}
+
     return results
+
 @app.route('/getSalaryDetails', methods=['POST'])
 def get_salary_details():
     if 'file' not in request.files:
@@ -85,7 +117,7 @@ def get_salary_details():
         file.save(file_path)
         
         try:
-            result = process_pdf(file_path,timeout=1000)  # 1000-second timeout
+            result = process_pdf(file_path,timeout=1000) 
             return jsonify(result), 200
         except TimeoutError:
             return jsonify({"error": "Request timed out after 1000 seconds. Please check Ollama server or file size."}), 408
@@ -93,7 +125,7 @@ def get_salary_details():
             return jsonify({"error": str(e)}), 500        
         finally:
             if os.path.exists(file_path):
-                os.remove(file_path)  # Clean up the uploaded file
+                os.remove(file_path)  
     else:
         return jsonify({"error": "Invalid file format. Please upload a PDF"}), 400
 
