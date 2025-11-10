@@ -1,10 +1,16 @@
 import os
 import time
 from flask import Flask, request, jsonify
+from langchain_classic.chains.retrieval import create_retrieval_chain
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.vectorstores import InMemoryVectorStore
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+
+
 from flask_cors import CORS  # Import CORS
 from waitress import serve
 
@@ -31,75 +37,25 @@ def process_pdf(file_path,timeout=1000):
         documents=all_splits,
         embedding=embeddings
     )
+    retriever = vector_store.as_retriever()
+    chatLLM = ChatOllama(model="llama3")
+    prompt = ChatPromptTemplate.from_template("""
+    Assume you are a http server and send a json for question asked from provided context.
+    Context: {context}
+    Question: {input}
+    """)
+    document_chain =  create_stuff_documents_chain(llm=chatLLM,prompt=prompt)
+    retrieval_chain = create_retrieval_chain(retriever,document_chain)
+    response = retrieval_chain.invoke({"input": "send me basic salary,net salary ,gross salary as json string"})
+    comp = []
+    if response["answer"] is not None:
+        answer = str(response["answer"])
+        comp = answer.index('```')
+        print(answer)
+    else:
+        print(response)
+    return response["answer"]
 
-# Define queries based on observed content
-    queries = [
-        "Employee Name",
-        "Employee ID",
-        "Date of Joining",
-        "Pay Period",
-        "Pay Date",
-        "Total Net Pay",
-        "Basic",
-        "House Rent Allowance",
-        "Income Tax",
-        "Provident Fund",
-        "Gross Earnings",
-        "Total Deductions",
-        "employee name",
-        "employee number",
-        "date of joining",
-        "total earnings",
-        "total deductions",
-        "net amount"
-    ]
-    results = {query.lower().replace(" ", "_"): None for query in queries}
-
-    # Perform similarity search and parse results
-    for query in queries:
-        search_results = vector_store.similarity_search(query, k=1)
-        if search_results and time.time() - start_time < timeout:
-            content = search_results[0].page_content
-            lines = content.split("\n")
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if query in line:
-                    # Look for value in the same line or next line
-                    if ":" in line:
-                        value = line.split(":")[1].strip()
-                        results[query.lower().replace(" ", "_")] = value if value else "Not found"
-                    elif i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if "Rs." in next_line or "₹" in next_line:
-                            results[query.lower().replace(" ", "_")] = next_line
-                        else:
-                            results[query.lower().replace(" ", "_")] = next_line if next_line else "Not found"
-        elif time.time() - start_time >= timeout:
-            raise TimeoutError("Processing exceeded 1000-second timeout limit")
-
-    expected_fields = {
-        "employee_name": "Not found",
-        "employee_id": "Not found",
-        "date_of_joining": "Not found",
-        "pay_period": "Not found",
-        "pay_date": "Not found",
-        "total_net_pay": "Not found",
-        "basic": "Not found",
-        "house_rent_allowance": "Not found",
-        "income_tax": "Not found",
-        "provident_fund": "Not found",
-        "gross_earnings": "Not found",
-        "total_deductions": "Not found",
-        "employee_number":"Not found",
-        "total_earnings":"Not found",
-        "total_deductions":"Not found",
-        "net_amount":"Not found",
-
-    }
-    results.update({k: v for k, v in results.items() if v is not None})
-    results = {k: expected_fields[k] if v is None else v for k, v in results.items()}
-
-    return results
 
 @app.route('/getSalaryDetails', methods=['POST'])
 def get_salary_details():
