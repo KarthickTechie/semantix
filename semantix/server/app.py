@@ -1,105 +1,98 @@
-import os
-import time
 from flask import Flask, request, jsonify
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings, OllamaLLM
 from langchain_community.vectorstores import InMemoryVectorStore
-from flask_cors import CORS  # Import CORS
+from langchain_community.retrievers import BM25Retriever
+from langchain_classic.chains.retrieval_qa.base import RetrievalQA  # Corrected import
+from langchain_classic.prompts import PromptTemplate
+from langchain_classic.chains.llm import LLMChain
+from langchain_classic.schema import BaseRetriever, Document
+import os
+import time
+from flask_cors import CORS
 from waitress import serve
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
-def process_pdf(file_path,timeout=1000):
+CORS(app)
+
+# Custom Hybrid Retriever Class
+class HybridRetriever(BaseRetriever):
+    def __init__(self, semantic_retriever, bm25_retriever):
+        self.semantic_retriever = semantic_retriever
+        self.bm25_retriever = bm25_retriever
+
+    def _get_relevant_documents(self, query):  # Corrected to _get_relevant_documents
+        semantic_results = self.semantic_retriever.invoke(query)
+        bm25_results = self.bm25_retriever.invoke(query)
+        combined = semantic_results[:2] + [doc for doc in bm25_results if doc not in semantic_results][:1]
+        return combined[:3]
+    
+def process_pdf(file_path, timeout=1000):
     start_time = time.time()
-    # Load the PDF
+
+    # Load and split
     loader = PyPDFLoader(file_path)
     docs = loader.load()
-    print(f"Number of pages loaded: {len(docs)}")
+    if not docs:
+        raise ValueError("No content extracted from PDF")
 
-    # Split documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, chunk_overlap=200, add_start_index=True
+        chunk_size=500,
+        chunk_overlap=100,
+        separators=["\n", "  ", "₹", "Rs."]
     )
     all_splits = text_splitter.split_documents(docs)
 
-    # Initialize embeddings
+    # Embeddings and LLM with Llama3
     embeddings = OllamaEmbeddings(model="llama3")
+    llm = OllamaLLM(model="llama3", temperature=0.1)
 
-    # Populate vector store
-    vector_store = InMemoryVectorStore.from_documents(
-        documents=all_splits,
-        embedding=embeddings
-    )
+    # Vector store for semantic search
+    vector_store = InMemoryVectorStore.from_documents(all_splits, embeddings)
+    semantic_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
-# Define queries based on observed content
-    queries = [
-        "Employee Name",
-        "Employee ID",
-        "Date of Joining",
-        "Pay Period",
-        "Pay Date",
-        "Total Net Pay",
-        "Basic",
-        "House Rent Allowance",
-        "Income Tax",
-        "Provident Fund",
-        "Gross Earnings",
-        "Total Deductions",
-        "employee name",
-        "employee number",
-        "date of joining",
-        "total earnings",
-        "total deductions",
-        "net amount"
-    ]
-    results = {query.lower().replace(" ", "_"): None for query in queries}
+    # BM25 for keyword search
+    bm25_retriever = BM25Retriever.from_documents(all_splits)
+    bm25_retriever.k = 3
 
-    # Perform similarity search and parse results
-    for query in queries:
-        search_results = vector_store.similarity_search(query, k=1)
-        if search_results and time.time() - start_time < timeout:
-            content = search_results[0].page_content
-            lines = content.split("\n")
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if query in line:
-                    # Look for value in the same line or next line
-                    if ":" in line:
-                        value = line.split(":")[1].strip()
-                        results[query.lower().replace(" ", "_")] = value if value else "Not found"
-                    elif i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if "Rs." in next_line or "₹" in next_line:
-                            results[query.lower().replace(" ", "_")] = next_line
-                        else:
-                            results[query.lower().replace(" ", "_")] = next_line if next_line else "Not found"
-        elif time.time() - start_time >= timeout:
-            raise TimeoutError("Processing exceeded 1000-second timeout limit")
+    # Initialize custom hybrid retriever
+    hybrid_retriever = HybridRetriever(semantic_retriever, bm25_retriever)
 
-    expected_fields = {
-        "employee_name": "Not found",
-        "employee_id": "Not found",
-        "date_of_joining": "Not found",
-        "pay_period": "Not found",
-        "pay_date": "Not found",
-        "total_net_pay": "Not found",
-        "basic": "Not found",
-        "house_rent_allowance": "Not found",
-        "income_tax": "Not found",
-        "provident_fund": "Not found",
-        "gross_earnings": "Not found",
-        "total_deductions": "Not found",
-        "employee_number":"Not found",
-        "total_earnings":"Not found",
-        "total_deductions":"Not found",
-        "net_amount":"Not found",
+    # Custom prompt for structured extraction
+    prompt_template = """
+    Extract the following salary components as JSON from the context. Use exact values with currency (e.g., ₹14,000.00 or Rs.80,000.00). If not found, use "Not found".
+    Components: Employee Name, Employee ID, Basic Pay, HRA, Total Earnings, Income Tax, Provident Fund, Total Deductions, Net Amount.
+    Context: {context}
+    Query: {question}
+    Output only valid JSON.
+    """
+    prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
 
-    }
-    results.update({k: v for k, v in results.items() if v is not None})
-    results = {k: expected_fields[k] if v is None else v for k, v in results.items()}
+    # RAG chain with hybrid retriever
+    try:
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=hybrid_retriever,  # Now a proper retriever instance
+            return_source_documents=True,
+            chain_type_kwargs={"prompt": prompt}
+        )
+        # Run query with RetrievalQA
+        question = "Extract all salary components from this payslip."
+        result = qa_chain.invoke({"query": question})
+        extracted_json = result["result"]
+    except (AttributeError, ImportError):
+        # Fallback to LLMChain with manual context
+        question = "Extract all salary components from this payslip."
+        context = "\n".join([doc.page_content for doc in hybrid_retriever._get_relevant_documents(question)])
+        llm_chain = LLMChain(llm=llm, prompt=prompt)
+        extracted_json = llm_chain.run({"context": context, "question": question})
 
-    return results
+    if time.time() - start_time >= timeout:
+        raise TimeoutError("Processing exceeded 1000-second timeout limit")
+
+    return {"extracted_data": extracted_json, "sources": [doc.page_content[:100] + "..." for doc in result["source_documents"]] if "result" in locals() else []}
 
 @app.route('/getSalaryDetails', methods=['POST'])
 def get_salary_details():
@@ -112,20 +105,19 @@ def get_salary_details():
     
     if file and file.filename.endswith('.pdf'):
         file_path = os.path.join("./uploads", file.filename)
-        print(f"file_path: {len(file_path)}")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         file.save(file_path)
         
         try:
-            result = process_pdf(file_path,timeout=1000) 
+            result = process_pdf(file_path, timeout=1000)
             return jsonify(result), 200
         except TimeoutError:
             return jsonify({"error": "Request timed out after 1000 seconds. Please check Ollama server or file size."}), 408
         except Exception as e:
-            return jsonify({"error": str(e)}), 500        
+            return jsonify({"error": str(e)}), 500
         finally:
             if os.path.exists(file_path):
-                os.remove(file_path)  
+                os.remove(file_path)
     else:
         return jsonify({"error": "Invalid file format. Please upload a PDF"}), 400
 
