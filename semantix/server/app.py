@@ -46,15 +46,19 @@ def process_pdf(file_path,timeout=1000):
     """)
     document_chain =  create_stuff_documents_chain(llm=chatLLM,prompt=prompt)
     retrieval_chain = create_retrieval_chain(retriever,document_chain)
-    response = retrieval_chain.invoke({"input": "send me basic salary,net salary ,gross salary as json string"})
-    comp = []
+    response = retrieval_chain.invoke({"input": "the retrieved document having salary details , identify salary or pay details like basic pay or basic salary , net pay or net salary and gross pay or gross salary send response as json string"})
+    comp = ''
     if response["answer"] is not None:
         answer = str(response["answer"])
-        comp = answer.index('```')
-        print(answer)
+        start_index = answer.index("```")+3
+        end_index = answer.rindex("```")
+        comp = answer[start_index:end_index]
+        comp = comp.replace('json','')
+        comp = comp.replace('/\n',' ')
+        print(comp)
     else:
         print(response)
-    return response["answer"]
+    return comp
 
 
 @app.route('/getSalaryDetails', methods=['POST'])
