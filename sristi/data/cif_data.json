@@ -1,0 +1,20 @@
+{
+  "CifData": [
+    {
+      "cifid": "9940362579",
+      "customer_first_name": "karthick",
+      "customer_last_name": "durairaj",
+      "aadhaar": "1234XXXXXXXX",
+      "PAN": "DFLXXXXXXX",
+      "aadhaar_verified": "true",
+      "pan_verified": "true"
+    }
+  ],
+  "customer_bureau": [
+    {
+      "cibil_score": "840",
+      "outstanding_liability": "1000000",
+      "DPD": "0"
+    }
+  ]
+}

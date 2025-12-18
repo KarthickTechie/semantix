@@ -3,7 +3,7 @@ import time
 from flask import Flask, request, jsonify
 from langchain_classic.chains.retrieval import create_retrieval_chain
 
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader , PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
@@ -19,15 +19,15 @@ CORS(app)  # Enable CORS for all routes
 def process_pdf(file_path,timeout=1000):
     start_time = time.time()
     # Load the PDF
-    loader = PyPDFLoader(file_path)
+    loader = PyMuPDFLoader(file_path)
     docs = loader.load()
-    print(f"Number of pages loaded: {len(docs)}")
-
+    first_page_doc = [ docs[0] ]
+    print(f"Number of pages loaded: {len(first_page_doc)}")
     # Split documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000, chunk_overlap=200, add_start_index=True
     )
-    all_splits = text_splitter.split_documents(docs)
+    all_splits = text_splitter.split_documents(first_page_doc)
 
     # Initialize embeddings
     embeddings = OllamaEmbeddings(model="llama3")
@@ -46,7 +46,7 @@ def process_pdf(file_path,timeout=1000):
     """)
     document_chain =  create_stuff_documents_chain(llm=chatLLM,prompt=prompt)
     retrieval_chain = create_retrieval_chain(retriever,document_chain)
-    response = retrieval_chain.invoke({"input": "the retrieved document having salary details , identify salary or pay details like basic pay or basic salary , net pay or net salary and gross pay or gross salary send response as json string"})
+    response = retrieval_chain.invoke({"input": "the retrieved document having loan details like loan amount , loan term and transaction information like borrower , seller , lender and closing information like Date Issued and Closing date  identify loan amount , loan term , borrower , seller , lender and Closing date send response as json string"})    
     comp = ''
     if response["answer"] is not None:
         answer = str(response["answer"])
