@@ -40,13 +40,20 @@ def process_pdf(file_path,timeout=1000):
     retriever = vector_store.as_retriever()
     chatLLM = ChatOllama(model="llama3")
     prompt = ChatPromptTemplate.from_template("""
-    Assume you are a http server and send a json for question asked from provided context.
+    Assume you are a http server and send a json with the structure of 
+
+        "basicPay": map the basic pay or basic salary value as string only and make sure to not include any other text ,
+        "netPay": map the net pay or net salary value as string only and make sure to not include any other text ,
+        "grossPay": map the gross pay or gross salary value as string only make sure to not include any other text ,
+        "employerName": map the employer name or company name value here make sure to not include any other text                                 
+    
+ for question asked from provided context. 
     Context: {context}
     Question: {input}
     """)
     document_chain =  create_stuff_documents_chain(llm=chatLLM,prompt=prompt)
     retrieval_chain = create_retrieval_chain(retriever,document_chain)
-    response = retrieval_chain.invoke({"input": "the retrieved document having salary details , identify salary or pay details like basic pay or basic salary , net pay or net salary and gross pay or gross salary send response as json string"})
+    response = retrieval_chain.invoke({"input": "the retrieved document having salary details , identify salary or pay details like basic pay or basic salary , net pay or net salary and gross pay or gross salary , employer name or company name send response as json string"})
     comp = ''
     if response["answer"] is not None:
         answer = str(response["answer"])
@@ -91,3 +98,7 @@ def get_salary_details():
 
 if __name__ == '__main__':
     serve(app, host='0.0.0.0', port=5000)
+
+
+
+    ## pip install langchain-community langchain-ollama pypdf flask-cors waitress
